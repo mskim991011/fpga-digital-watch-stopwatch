@@ -1,60 +1,58 @@
-FPGA-based Sensor Interfacing System (HC-SR04 & DHT11)
-Project Overview
+# FPGA-based Digital Clock & Stopwatch System
 
-This project implements a Register-Transfer Level (RTL) hardware design that interfaces two external sensors with a Xilinx Basys 3 FPGA.
+## Project Overview
+This project presents a comprehensive **Register-Transfer Level (RTL) design of a multi-functional Digital Clock and Stopwatch** using Verilog HDL. Deployed on a physical FPGA board, the system provides accurate real-time timekeeping and precise stopwatch measurements, fully displayed on a 4-digit 7-segment display.
 
-Instead of relying on an MCU and pre-written libraries, both sensor protocols are written from scratch in Verilog HDL. The datasheet timing diagrams (pulse-width measurement for the HC-SR04, single-wire bidirectional protocol for the DHT11) are translated directly into Finite State Machines (FSMs). The measured distance, temperature, and humidity are shown on the board's 4-digit 7-segment display.
+Unlike software-based timing solutions, this project is engineered from the ground up at the hardware level, demonstrating core digital logic design principles including clock frequency division, multi-state transition handling (FSM), external input synchronization, and hardware-level display multiplexing.
 
-Project Motivation & Background
+---
 
-Sensors like the HC-SR04 and DHT11 are usually read with an Arduino library, which hides the actual signal timing.
+## Project Motivation & Background
+While keeping time or measuring intervals is a trivial task for microprocessors using software timers, implementing these functions purely in hardware presents a unique set of engineering challenges. 
 
-The goal of this project was to handle that timing directly in hardware:
+The primary motivation for this project was to **master the foundational concepts of sequential logic and digital system design**, which are essential for advanced SoC (System-on-Chip) and ASIC engineering. By building this system without relying on an MCU, this project aims to:
+* **Deepen understanding of Clock Domains:** Mastering how to generate and manage precise timebases (1Hz, 100Hz) from a high-frequency system clock.
+* **Tackle Real-World Hardware Issues:** Solving physical challenges such as mechanical button bouncing (Debouncing) and asynchronous input metastability.
+* **Enhance FSM Design Capabilities:** Designing a robust Finite State Machine to manage complex user interactions and seamless transitions between Clock and Stopwatch modes.
+* **Experience the Full Front-End Flow:** Operating through the entire digital design pipeline—from RTL coding and Testbench simulation to physical FPGA synthesis and pin binding.
 
-Practical digital design: Build working communication interfaces, not just logic gates.
-Microsecond-level timing: Generate and measure pulses with a dedicated timebase instead of software delays.
-Fault handling in hardware: Make sure the FSMs never hang when a sensor stops responding.
-Foundation for SoC work: Write sensor controllers as reusable hardware blocks.
-System Architecture & Data Flow
-Timebase generators
-tick_gen_1us: 1 MHz enable tick from the 100 MHz system clock (HC-SR04 timing).
-tick_gen_10us: 100 kHz enable tick (DHT11 timing).
-Sensor control FSMs
-Independent FSMs implement the HC-SR04 and DHT11 protocols, extract the raw data, perform the arithmetic (division for distance, byte sum for checksum), and output the final values.
-Display controller (fnd_contr)
-Converts the binary values to BCD and multiplexes them onto the 7-segment display.
-Button input (bt_debounce)
-Debounces the push buttons and generates a single-cycle pulse with an edge detector.
-Detailed Module Specifications
-1. HC-SR04 Ultrasonic Distance Controller (sr04_ctrl)
-Trigger pulse: Drives a trigger pulse of about 12 µs, satisfying the sensor's minimum of 10 µs.
-4-state FSM: IDLE → TRIG → WAIT → CALC.
-WAIT: waits for the echo signal to rise.
-CALC: counts the echo high time in 1 µs units.
-Distance calculation: Distance (cm) = echo high time (µs) / 58, computed in hardware when the echo signal falls.
-Two timeouts (hang prevention):
-30 ms in WAIT: if the echo never rises (sensor disconnected or no response), the FSM returns to IDLE and outputs 0.
-25 ms in CALC: the longest valid echo is about 23.2 ms (4 m × 58 µs/cm). If the echo stays high longer than 25 ms, the measurement is discarded and the FSM returns to IDLE.
-Measurement period: A new measurement starts automatically every 100 ms, which satisfies the datasheet recommendation of a measurement cycle over 60 ms.
-2. DHT11 Temperature & Humidity Controller (dht11_controller)
-Tri-state control: Controls the single inout data line. Drives it LOW for 19 ms (start signal, datasheet minimum 18 ms), releases it, and waits about 30 µs before switching to input mode.
-8-state FSM: IDLE → START → WAIT → SYNC_L → SYNC_H → DATA_SYNC → DATA_C → STOP.
-Bit decoding: Measures the high time of each bit with the 10 µs tick. High time of 50 µs or more is decoded as 1, otherwise 0. 40 bits are shifted in.
-Checksum verification: Adds the four data bytes (humidity integer/decimal, temperature integer/decimal) and compares the 8-bit result with the checksum byte. dht11_valid is asserted only when they match.
-Timeout: If a transaction does not finish within 1 s (100,000 × 10 µs), the FSM releases the line and returns to IDLE.
-Trigger: A measurement starts on a button press, or automatically when the idle counter expires (6,000,000 × 10 µs = about 60 s).
-Engineering Challenges & Solutions
-Challenge: The FSM froze when a sensor was disconnected or the echo pulse was lost.
-Solution: Calculated the longest valid duration for each step and added counter-based timeouts (HC-SR04: 30 ms wait / 25 ms measurement, DHT11: 1 s). When a limit is exceeded the FSM resets to IDLE, so the system recovers on the next cycle without a manual reset.
-Challenge: Button bouncing caused multiple unintended inputs.
-Solution: Added a debounce circuit and an edge detector so that each press produces exactly one pulse.
-Known Limitations & Future Work
-The echo and dhtio inputs are sampled directly by the FSMs without a dedicated synchronizer. Adding a 2-stage flip-flop synchronizer on these asynchronous inputs would reduce the risk of metastability.
-The distance division uses the / operator, which synthesizes a combinational divider. A sequential or multiply-shift approximation could reduce logic depth.
-No testbench is included in this repository; verification was done on the Basys 3 board.
-Development Environment
-Target Hardware: Xilinx Basys 3 (Artix-7)
-Peripherals: HC-SR04 ultrasonic sensor, DHT11 temperature & humidity sensor
-Language: Verilog HDL
-EDA Tool: Xilinx Vivado (synthesis, implementation, bitstream generation)
-Key Focus Areas: RTL design, FSM, microsecond timing, timeout-based fault recovery, hardware arithmetic
+---
+
+## System Architecture & Core Modules
+
+### 1. Clock Divider & Timebase Generator
+* Receives the high-frequency system clock (e.g., 100MHz) and scales it down using internal counters.
+* Generates a strict `1Hz` enable tick for the real-time clock (HH:MM:SS) and a `100Hz` (10ms) tick for the stopwatch's precision measurement, ensuring zero clock skew.
+
+### 2. Input Synchronization & Debouncing
+* **Debounce Logic:** Eliminates mechanical bouncing noise from tactile push buttons using shift registers and counter-based delay logic, ensuring clean single-pulse inputs.
+* **Edge Detection:** Extracts exactly one clock-cycle pulse (Rising Edge) from prolonged user button presses to prevent multiple unintended state transitions.
+
+### 3. Mode Control FSM (Finite State Machine)
+* Acts as the brain of the system, seamlessly switching between different operational modes based on user inputs:
+  * **`CLOCK_MODE`:** Displays the current time. Includes sub-states for time setting (Hour/Minute adjustment).
+  * **`STOPWATCH_MODE`:** Handles Start, Stop, and Clear (Reset) operations accurately down to the hundredth of a second.
+
+### 4. Time Counters & BCD Converters
+* Implements cascaded modulo counters (Mod-10, Mod-6, Mod-24) to represent the standard time format (Base-60 for seconds/minutes, Base-24 for hours).
+* Dedicated Binary-Coded Decimal (BCD) conversion logic translates raw binary counts into human-readable 7-segment display formats.
+
+### 5. Display Multiplexer (FND Controller)
+* Drives a 4-digit 7-segment display using limited FPGA I/O pins.
+* Cycles through each digit at a fast refresh rate (e.g., 1kHz) utilizing persistence of vision (POV) to make all 4 digits appear continuously and brightly lit without flickering.
+
+---
+
+## RTL Simulation & Verification
+A critical aspect of this project is the rigorous pre-synthesis verification using SystemVerilog/Verilog Testbenches.
+* Developed comprehensive testbenches to simulate module behaviors before physical FPGA deployment.
+* Verified FSM state transitions, edge detector accuracy, and clock divider outputs using timing waveforms.
+* Ensured corner-case stability, such as rapid button presses and simultaneous mode switching, confirming the robustness of the RTL design.
+
+---
+
+## Repository Structure
+* `documents/` : Project presentation PDF detailing architectural specifications and FSM state diagrams.
+* `source/` : Verilog RTL source codes containing the FSM, clock dividers, BCD counters, and top module.
+* `TestBench/` : Simulation testbench files used for RTL verification and timing analysis.
+* `constraint/` : FPGA physical pin assignments (Buttons, System Clock, 7-Segment LEDs).
